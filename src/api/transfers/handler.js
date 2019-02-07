@@ -25,13 +25,33 @@
 const TransferService = require('../../domain/transfer')
 const Logger = require('@mojaloop/central-services-shared').Logger
 const Boom = require('boom')
+const { Map } = require('immutable')
 
 exports.create = async function (request, h) {
+  const allHeaders = Map(request.headers)
   try {
+    const headers = {
+      'Content-Length': allHeaders.get('content-length'),
+      'Content-Type': allHeaders.get('content-type'),
+      'Date': allHeaders.get('date'),
+      'x-forwarded-for': allHeaders.get('x-forwarded-for'),
+      'fspiop-source': allHeaders.get('fspiop-source'),
+      'FSPIOP-destination': allHeaders.get('fspiop-destination'),
+      'FSPIOP-encryption': allHeaders.get('fspiop-encryption'),
+      'FSPIOP-signature': allHeaders.get('fspiop-signature'),
+      'FSPIOP-uri': allHeaders.get('fspiop-uri'),
+      'FSPIOP-http-method': allHeaders.get('fspiop-http-method')
+    }
     Logger.info('create::start(%s)', JSON.stringify(request.payload))
-    const result = await TransferService.prepare(request.payload)
-    return h.response(result).code((result === true) ? 202 : 201)
+    const result = await TransferService.prepare(JSON.parse(JSON.stringify(headers)), request.payload)
+    return h.response(result).code((result === true) ? 202 : 500)
   } catch (err) {
-    throw Boom.boomify(err, {statusCode: 400, message: 'An error has occurred'})
+    throw Boom.boomify(err, {statusCode: 500, message: 'An error has occurred'})
   }
+}
+
+exports.receiveNotification = async function (request, h) {
+  console.log('receiveNotification::headers(%s)', JSON.stringify(request.headers))
+  console.log('receiveNotification::payload(%s)', JSON.stringify(request.payload))
+  return h.response(true).code(200)
 }

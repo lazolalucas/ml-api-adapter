@@ -24,38 +24,47 @@
 
 const Producer = require('@mojaloop/central-services-shared').Kafka.Producer
 const Logger = require('@mojaloop/central-services-shared').Logger
+const Uuid = require('uuid4')
+const Notification = require('../../../handlers/notification')
+const Config = require('../../../lib/config')
 
-const publishPrepare = async (message) => {
+const publishPrepare = async (headers, message) => {
+  Logger.info('publishPrepare::start')
   var kafkaProducer = new Producer()
-  var connectionResult = await kafkaProducer.connect().catch(err => { throw err })
-  Logger.info(`Connected result=${connectionResult}`)
-  if (connectionResult) {
-    let messageProtocol = {
-      content: message,
-      id: message.transferId,
-      to: message.payeeFsp,
-      from: message.payerFsp,
-      metadata: {
-        date: new Date()
-      },
-      type: 'application/json'
+  await kafkaProducer.connect().catch(err => {
+    Logger.error(`error connecting to kafka - ${err}`)
+    throw err
+  })
+  const messageProtocol = {
+    id: message.transferId,
+    to: message.payeeFsp,
+    from: message.payerFsp,
+    type: 'application/json',
+    content: {
+      headers: headers,
+      payload: message
+    },
+    metadata: {
+      event: {
+        id: Uuid(),
+        type: 'prepare',
+        action: 'prepare',
+        createdAt: new Date(),
+        status: 'success'
+      }
     }
-    let topicConfig = {
-      topicName: 'transfer'
-    }
-    return kafkaProducer.sendMessage(messageProtocol, topicConfig)
-      .then(result => {
-        kafkaProducer.disconnect()
-        return result
-      })
-      .catch(err => {
-        kafkaProducer.disconnect()
-        throw err
-      })
-  } else {
-    throw new Error('Not succesful in connecting to kafka cluster')
   }
+  const topicConfig = {
+    topicName: `topic-${message.payerFsp}-transfer-prepare`
+  }
+  return kafkaProducer.sendMessage(messageProtocol, topicConfig).catch(err => {
+    const url = Config.DFSP_URLS[message.payerFsp]
+    Notification.sendNotification(url, headers, message)
+    Logger.error(`Kafka error:: ERROR:'${err}'`)
+    throw err
+  })
 }
+
 module.exports = {
   publishPrepare
 }
